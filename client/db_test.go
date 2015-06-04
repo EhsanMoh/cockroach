@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -287,4 +288,47 @@ func TestDebugName(t *testing.T) {
 		}
 		return nil
 	})
+}
+
+func TestCommonMethods(t *testing.T) {
+	types := []reflect.Type{
+		reflect.TypeOf(&client.DB{}),
+		reflect.TypeOf(&client.Tx{}),
+		reflect.TypeOf(&client.Batch{}),
+		reflect.TypeOf(client.DB{}.B),
+	}
+	blacklist := map[string]struct{}{
+		"(*client.Batch).InternalAddCall":   {},
+		"(*client.DB).AdminMerge":           {},
+		"(*client.DB).AdminSplit":           {},
+		"(*client.DB).InternalKV":           {},
+		"(*client.DB).Run":                  {},
+		"(*client.DB).Tx":                   {},
+		"(*client.Tx).Commit":               {},
+		"(*client.Tx).DebugName":            {},
+		"(*client.Tx).InternalSetPriority":  {},
+		"(*client.Tx).Run":                  {},
+		"(*client.Tx).SetDebugName":         {},
+		"(*client.Tx).SetSnapshotIsolation": {},
+	}
+	for _, typ := range types {
+		for j := 0; j < typ.NumMethod(); j++ {
+			m := typ.Method(j)
+			if len(m.PkgPath) > 0 {
+				continue
+			}
+			if _, ok := blacklist[fmt.Sprintf("(%s).%s", typ, m.Name)]; ok {
+				continue
+			}
+			for _, otherTyp := range types {
+				if typ == otherTyp {
+					continue
+				}
+				if _, ok := otherTyp.MethodByName(m.Name); !ok {
+					t.Errorf("(%s).%s does not exist, but (%s).%s does",
+						otherTyp, m.Name, typ, m.Name)
+				}
+			}
+		}
+	}
 }
